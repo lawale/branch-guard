@@ -140,7 +140,19 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<RuleEvalRes
         },
       });
     } else {
-      ruleLogger.debug("No matching files — skipping (no existing check)");
+      ruleLogger.debug("No matching files — creating passing check");
+      await createCheckRun(octokit, {
+        owner,
+        repo,
+        headSha: pr.headSha,
+        name,
+        status: "completed",
+        conclusion: "success",
+        output: {
+          title: "Rule not applicable",
+          summary: "No matching files changed in this PR.",
+        },
+      });
     }
     return null;
   }

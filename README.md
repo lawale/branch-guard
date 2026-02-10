@@ -323,6 +323,7 @@ npm run typecheck   # Type-check without emitting
 - **Cached** — 60s in-memory TTL cache for config and Git tree responses
 - **Fault-tolerant** — each rule evaluation is isolated; one failure doesn't block others
 - **Resilient** — automatic retry with exponential backoff for GitHub API rate limits (429, 403) and transient errors (5xx)
+- **Branch protection compatible** — always creates a passing check run for every rule, even when no files match, so rules can be safely marked as required status checks
 
 See [branch-guard-spec.md](branch-guard-spec.md) for the full technical specification.
 

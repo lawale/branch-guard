@@ -127,7 +127,7 @@ describe("evaluateRules", () => {
     expect(octokit.request).not.toHaveBeenCalled();
   });
 
-  it("skips rules when no changed files match", async () => {
+  it("creates passing check when no changed files match (branch protection compat)", async () => {
     const octokit = createMockOctokit();
     const config: Config = {
       rules: [
@@ -156,11 +156,19 @@ describe("evaluateRules", () => {
       logger: createLogger(),
     });
 
-    // Should call findCheckRun to check if existing run needs auto-pass
+    // Should call findCheckRun first
     const findCalls = octokit.request.mock.calls.filter(
       (call: any[]) => typeof call[0] === "string" && call[0].includes("commits"),
     );
     expect(findCalls.length).toBeGreaterThanOrEqual(1);
+
+    // No existing check found → should create a passing check run
+    const createCall = octokit.request.mock.calls.find(
+      (call: any[]) => call[0] === "POST /repos/{owner}/{repo}/check-runs",
+    );
+    expect(createCall).toBeDefined();
+    expect(createCall![1].conclusion).toBe("success");
+    expect(createCall![1].output.title).toBe("Rule not applicable");
   });
 
   it("handles rule evaluation errors gracefully", async () => {
