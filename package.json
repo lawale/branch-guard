@@ -1,0 +1,39 @@
+{
+  "name": "branch-guard",
+  "version": "0.1.0",
+  "description": "Conditional check runs GitHub App — programmable branch protection layer",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "github-app",
+    "probot",
+    "branch-protection",
+    "check-runs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.1.1",
+    "picomatch": "^4.0.3",
+    "pino": "^10.3.1",
+    "probot": "^13.4.7",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.2.2",
+    "@types/picomatch": "^4.0.2",
+    "nodemon": "^3.1.11",
+    "smee-client": "^3.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
