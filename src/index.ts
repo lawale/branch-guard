@@ -11,6 +11,7 @@ import { registerPushHandler } from "./handlers/push.js";
 import { registerCheckSuiteHandler } from "./handlers/check-suite.js";
 import { registerCheckRunHandler } from "./handlers/check-run.js";
 import { registerIssueCommentHandler } from "./handlers/issue-comment.js";
+import { registerInstallationHandler } from "./handlers/installation.js";
 
 // Register check types
 registerCheck(new FilePresenceCheck());
@@ -34,6 +35,7 @@ export default function app(robot: Probot, { getRouter }: ApplicationFunctionOpt
   registerCheckSuiteHandler(robot);
   registerCheckRunHandler(robot);
   registerIssueCommentHandler(robot);
+  registerInstallationHandler(robot);
 
   robot.log.info("BranchGuard app loaded");
 }
