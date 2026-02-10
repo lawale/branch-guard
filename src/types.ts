@@ -48,6 +48,7 @@ const ApprovalGateConfigSchema = z.object({
   required_teams: z.array(z.string()).min(1).optional(),
   required_users: z.array(z.string()).min(1).optional(),
   mode: z.enum(["any", "all"]).optional().default("any"),
+  auto_request_reviewers: z.boolean().optional().default(false),
 }).refine(
   (data) => (data.required_teams && data.required_teams.length > 0) ||
             (data.required_users && data.required_users.length > 0),

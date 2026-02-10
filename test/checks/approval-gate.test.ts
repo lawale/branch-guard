@@ -9,7 +9,9 @@ function createMockContext(
     required_teams?: string[];
     required_users?: string[];
     mode?: "any" | "all";
+    auto_request_reviewers?: boolean;
   },
+  mockRequestReviewersError?: { status: number; message: string },
 ): CheckContext {
   const reviewsResponse = reviews.map((r) => ({
     user: { login: r.user },
@@ -20,6 +22,14 @@ function createMockContext(
   const requestMock = vi.fn().mockImplementation((route: string, params?: any) => {
     if (route.includes("/reviews")) {
       return Promise.resolve({ data: reviewsResponse });
+    }
+    if (route.includes("/requested_reviewers")) {
+      if (mockRequestReviewersError) {
+        const error: any = new Error(mockRequestReviewersError.message);
+        error.status = mockRequestReviewersError.status;
+        return Promise.reject(error);
+      }
+      return Promise.resolve({ data: {} });
     }
     if (route.includes("/teams/")) {
       // Extract team slug from params (route is a template string)
@@ -53,6 +63,7 @@ function createMockContext(
         required_teams: config.required_teams,
         required_users: config.required_users,
         mode: config.mode ?? "any",
+        auto_request_reviewers: config.auto_request_reviewers ?? false,
       },
     } as ApprovalGateRule,
     pr: {
@@ -373,6 +384,144 @@ describe("ApprovalGateCheck", () => {
       const calls = (ctx.octokit.request as any).mock.calls;
       const teamCalls = calls.filter((c: any) => c[0].includes("/teams/"));
       expect(teamCalls).toHaveLength(0);
+    });
+  });
+
+  describe("auto-request reviewers", () => {
+    it("does not request reviewers when auto_request_reviewers is false", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["alice"] },
+        { required_teams: ["backend-team"], auto_request_reviewers: false },
+      );
+
+      await check.execute(ctx);
+
+      const calls = (ctx.octokit.request as any).mock.calls;
+      const requestCalls = calls.filter((c: any) => c[0].includes("/requested_reviewers"));
+      expect(requestCalls).toHaveLength(0);
+    });
+
+    it("does not request reviewers when auto_request_reviewers is omitted", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["alice"] },
+        { required_teams: ["backend-team"] },
+      );
+
+      await check.execute(ctx);
+
+      const calls = (ctx.octokit.request as any).mock.calls;
+      const requestCalls = calls.filter((c: any) => c[0].includes("/requested_reviewers"));
+      expect(requestCalls).toHaveLength(0);
+    });
+
+    it("requests missing team reviewers when enabled and check fails", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["alice"] },
+        { required_teams: ["backend-team"], auto_request_reviewers: true },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("failure");
+      expect(ctx.octokit.request).toHaveBeenCalledWith(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+        expect.objectContaining({
+          owner: "org",
+          repo: "repo",
+          pull_number: 42,
+          team_reviewers: ["backend-team"],
+          reviewers: [],
+        }),
+      );
+      expect(result.summary).toContain("Reviewers auto-requested: @backend-team");
+    });
+
+    it("requests only missing teams, not already-approved ones (mode: all)", async () => {
+      const ctx = createMockContext(
+        [{ user: "alice", state: "APPROVED" }],
+        { "backend-team": ["alice"], "security-team": ["bob"] },
+        { required_teams: ["backend-team", "security-team"], mode: "all", auto_request_reviewers: true },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("failure");
+      expect(ctx.octokit.request).toHaveBeenCalledWith(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+        expect.objectContaining({
+          team_reviewers: ["security-team"],
+          reviewers: [],
+        }),
+      );
+    });
+
+    it("does not request reviewers when failure is due to changes requested", async () => {
+      const ctx = createMockContext(
+        [{ user: "alice", state: "CHANGES_REQUESTED" }],
+        { "backend-team": ["alice"] },
+        { required_teams: ["backend-team"], auto_request_reviewers: true },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toBe("Changes requested");
+      const calls = (ctx.octokit.request as any).mock.calls;
+      const requestCalls = calls.filter((c: any) => c[0].includes("/requested_reviewers"));
+      expect(requestCalls).toHaveLength(0);
+    });
+
+    it("handles 422 error gracefully when requesting reviewers", async () => {
+      const ctx = createMockContext(
+        [],
+        {},
+        { required_users: ["not-a-collaborator"], auto_request_reviewers: true },
+        { status: 422, message: "Unprocessable Entity" },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("failure");
+      expect(result.summary).toContain("Failed to request: @not-a-collaborator");
+      expect(ctx.logger.warn).toHaveBeenCalled();
+    });
+
+    it("requests both teams and users when both are missing", async () => {
+      const ctx = createMockContext(
+        [],
+        { "team-a": ["charlie"] },
+        { required_teams: ["team-a"], required_users: ["alice"], auto_request_reviewers: true },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("failure");
+      expect(ctx.octokit.request).toHaveBeenCalledWith(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+        expect.objectContaining({
+          team_reviewers: ["team-a"],
+          reviewers: ["alice"],
+        }),
+      );
+      expect(result.summary).toContain("Reviewers auto-requested: @team-a, @alice");
+    });
+
+    it("does not request reviewers when check passes", async () => {
+      const ctx = createMockContext(
+        [{ user: "alice", state: "APPROVED" }],
+        {},
+        { required_users: ["alice"], auto_request_reviewers: true },
+      );
+
+      const result = await check.execute(ctx);
+
+      expect(result.conclusion).toBe("success");
+      const calls = (ctx.octokit.request as any).mock.calls;
+      const requestCalls = calls.filter((c: any) => c[0].includes("/requested_reviewers"));
+      expect(requestCalls).toHaveLength(0);
     });
   });
 });

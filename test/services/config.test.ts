@@ -302,6 +302,65 @@ rules:
     }
   });
 
+  it("loads a valid approval_gate config with auto_request_reviewers enabled", async () => {
+    const autoRequestConfig = `
+rules:
+  - name: api-approval
+    description: "API changes require backend team approval"
+    check_type: approval_gate
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "api/**"
+    config:
+      required_teams:
+        - backend-team
+      auto_request_reviewers: true
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(autoRequestConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].check_type).toBe("approval_gate");
+      if (result.config.rules[0].check_type === "approval_gate") {
+        expect(result.config.rules[0].config.auto_request_reviewers).toBe(true);
+      }
+    }
+  });
+
+  it("defaults auto_request_reviewers to false when omitted", async () => {
+    const approvalConfig = `
+rules:
+  - name: api-approval
+    description: "API changes require backend team approval"
+    check_type: approval_gate
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "api/**"
+    config:
+      required_teams:
+        - backend-team
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(approvalConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].check_type).toBe("approval_gate");
+      if (result.config.rules[0].check_type === "approval_gate") {
+        expect(result.config.rules[0].config.auto_request_reviewers).toBe(false);
+      }
+    }
+  });
+
   it("returns invalid when approval_gate has neither teams nor users", async () => {
     const invalidApprovalConfig = `
 rules:

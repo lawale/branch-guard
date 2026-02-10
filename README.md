@@ -191,10 +191,13 @@ With multiple requirements and `mode: all`:
 | `required_teams` | string[] | Team slugs whose members can approve (optional) |
 | `required_users` | string[] | GitHub usernames who can approve (optional) |
 | `mode` | enum | `any` (default) — at least one requirement met. `all` — every requirement met. |
+| `auto_request_reviewers` | boolean | Auto-request missing reviewers on the PR when the check fails (default: `false`) |
 
 At least one of `required_teams` or `required_users` must be provided. The check evaluates the latest review from each reviewer — if any required reviewer has requested changes, the check fails regardless of other approvals. Username matching is case-insensitive. The check re-evaluates on PR sync or `/recheck`.
 
-> **Note:** Requires the **Organization Members: Read** permission on the GitHub App to resolve team memberships.
+When `auto_request_reviewers` is enabled, BranchGuard automatically requests review from the missing teams/users on the PR. Only missing reviewers are requested — already-approved teams/users are skipped. Reviewers are not requested when the failure is due to changes being requested (those reviewers already know). GitHub handles overlapping team memberships gracefully (no duplicate notifications).
+
+> **Note:** Requires the **Organization Members: Read** permission to resolve team memberships, and **Pull Requests: Read & Write** when `auto_request_reviewers` is enabled.
 
 ## Custom Failure Messages
 
@@ -279,7 +282,7 @@ npm run typecheck   # Type-check without emitting
 |---|---|---|
 | Checks | Read & Write | Create and update check runs |
 | Contents | Read | Fetch config file and Git trees |
-| Pull Requests | Read | Fetch changed files and reviews |
+| Pull Requests | Read & Write | Fetch changed files/reviews; request reviewers (`auto_request_reviewers`) |
 | Organization Members | Read | Resolve team memberships (for `approval_gate`) |
 | Metadata | Read | Default |
 

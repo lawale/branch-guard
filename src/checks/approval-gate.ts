@@ -66,10 +66,36 @@ export class ApprovalGateCheck implements CheckType {
     ];
     const modeText = mode === "all" ? "all of" : "at least one of";
 
+    // Auto-request missing reviewers if enabled
+    let autoRequestNote = "";
+    if (rule.config.auto_request_reviewers) {
+      const missingTeams = required_teams.filter((t) =>
+        status.missingRequirements.includes(`@${t}`),
+      );
+      const missingUsers = required_users.filter((u) =>
+        status.missingRequirements.includes(`@${u}`),
+      );
+
+      if (missingTeams.length > 0 || missingUsers.length > 0) {
+        const { requested, failed } = await this.requestReviewers(
+          ctx,
+          missingTeams,
+          missingUsers,
+        );
+
+        if (requested.length > 0) {
+          autoRequestNote += `\n\nReviewers auto-requested: ${requested.join(", ")}`;
+        }
+        if (failed.length > 0) {
+          autoRequestNote += `\n\nFailed to request: ${failed.join(", ")} (not a collaborator or team not accessible)`;
+        }
+      }
+    }
+
     return {
       conclusion: "failure",
       title: `Approval required from: ${status.missingRequirements.join(", ")}`,
-      summary: `No approving reviews from the required teams/users.\n\nRequired ${modeText}: ${requirements.join(", ")}`,
+      summary: `No approving reviews from the required teams/users.\n\nRequired ${modeText}: ${requirements.join(", ")}${autoRequestNote}`,
     };
   }
 
@@ -150,6 +176,53 @@ export class ApprovalGateCheck implements CheckType {
     }
 
     return teamMembersMap;
+  }
+
+  private async requestReviewers(
+    ctx: CheckContext,
+    teams: string[],
+    users: string[],
+  ): Promise<{ requested: string[]; failed: string[] }> {
+    const requested: string[] = [];
+    const failed: string[] = [];
+
+    try {
+      await withRetry(() =>
+        ctx.octokit.request(
+          "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+          {
+            owner: ctx.owner,
+            repo: ctx.repo,
+            pull_number: ctx.pr.number,
+            reviewers: users,
+            team_reviewers: teams,
+          },
+        ),
+      );
+
+      requested.push(
+        ...teams.map((t) => `@${t}`),
+        ...users.map((u) => `@${u}`),
+      );
+    } catch (error: any) {
+      if (error.status === 422) {
+        ctx.logger.warn(
+          { teams, users, status: error.status, message: error.message },
+          "Failed to request reviewers — user may not be a collaborator or team not accessible",
+        );
+      } else {
+        ctx.logger.error(
+          { error, teams, users },
+          "Unexpected error requesting reviewers",
+        );
+      }
+      failed.push(
+        ...teams.map((t) => `@${t}`),
+        ...users.map((u) => `@${u}`),
+      );
+    }
+
+    return { requested, failed };
   }
 
   private evaluateApprovals(
