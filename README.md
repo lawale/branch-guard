@@ -282,6 +282,32 @@ docker build -t branch-guard .
 docker run -p 3000:3000 --env-file .env branch-guard
 ```
 
+### Fly.io
+
+1. Install the [Fly CLI](https://fly.io/docs/flyctl/install/)
+2. Launch the app:
+
+```bash
+fly launch --no-deploy
+```
+
+3. Set secrets:
+
+```bash
+fly secrets set APP_ID="your-app-id" \
+  PRIVATE_KEY="$(cat private-key.pem)" \
+  WEBHOOK_SECRET="your-webhook-secret" \
+  NODE_ENV="production"
+```
+
+4. Deploy:
+
+```bash
+fly deploy
+```
+
+The `Dockerfile` is auto-detected. Set your GitHub App's webhook URL to `https://<your-app>.fly.dev/api/github/webhooks`.
+
 ### Local Development
 
 ```bash
@@ -317,7 +343,7 @@ npm run typecheck   # Type-check without emitting
 
 ### Required Webhook Events
 
-`pull_request`, `push`, `check_suite`, `check_run`, `issue_comment`
+`pull_request`, `pull_request_review`, `push`, `check_suite`, `check_run`, `issue_comment`
 
 ## Architecture
 
@@ -328,8 +354,6 @@ npm run typecheck   # Type-check without emitting
 - **Resilient** — automatic retry with exponential backoff for GitHub API rate limits (429, 403) and transient errors (5xx)
 - **Branch protection compatible** — always creates a passing check run for every rule, even when no files match, so rules can be safely marked as required status checks
 - **Installation backfill** — automatically evaluates all open PRs when the app is first installed, so existing PRs don't get stuck with missing checks
-
-See [branch-guard-spec.md](branch-guard-spec.md) for the full technical specification.
 
 ## Contributing
 
