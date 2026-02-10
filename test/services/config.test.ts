@@ -454,6 +454,44 @@ rules:
     }
   });
 
+  it("loads a valid config with notify: false on a rule", async () => {
+    const configWithNotifyFalse = `
+rules:
+  - name: silent-check
+    description: "This check does not notify"
+    check_type: file_presence
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "src/**"
+    config:
+      mode: base_subset_of_head
+    notify: false
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(configWithNotifyFalse) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].notify).toBe(false);
+    }
+  });
+
+  it("defaults notify to true when not specified", async () => {
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(validConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].notify).toBe(true);
+    }
+  });
+
   it("re-throws non-404 API errors", async () => {
     const error: any = new Error("Unauthorized");
     error.status = 401;

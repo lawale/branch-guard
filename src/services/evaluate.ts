@@ -1,11 +1,12 @@
 import type { Octokit } from "@octokit/core";
 import type { Logger } from "pino";
-import type { Config, Rule, PullRequestContext, ExternalStatusRule } from "../types.js";
+import type { Config, Rule, PullRequestContext, ExternalStatusRule, CheckResult } from "../types.js";
 import { checkRunName, CONFIG_CHECK_NAME } from "../types.js";
 import { matchFiles, hasMatchingFiles } from "./file-matcher.js";
 import { getCheck } from "../checks/index.js";
 import { createCheckRun, updateCheckRun, findCheckRun } from "./check-runs.js";
 import { getPendingKey, setPendingEvaluation } from "../checks/external-status.js";
+import { postOrUpdateFailureComment, updateCommentToSuccess } from "./pr-comment.js";
 
 interface EvaluateParams {
   octokit: Octokit;
@@ -40,7 +41,9 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
     ),
   );
 
-  // Log any unexpected errors
+  // Log any unexpected errors and collect error failures for notification
+  const errorFailures: Array<{ rule: Rule; result: CheckResult }> = [];
+
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result.status === "rejected") {
@@ -53,10 +56,48 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
       // Post a failing check so the user knows something went wrong
       try {
         await postErrorCheck(octokit, owner, repo, pr.headSha, rule, result.reason);
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        errorFailures.push({
+          rule,
+          result: {
+            conclusion: "failure",
+            title: "Internal error",
+            summary: `An error occurred while evaluating this rule. Error: ${message}`,
+          },
+        });
       } catch (postError) {
         logger.error({ rule: rule.name, error: postError }, "Failed to post error check run");
       }
     }
+  }
+
+  // Aggregate results for PR comment notification
+  const evaluatedResults = results
+    .filter(
+      (r): r is PromiseFulfilledResult<RuleEvalResult | null> =>
+        r.status === "fulfilled" && r.value !== null,
+    )
+    .map((r) => r.value!);
+
+  // Include error failures in the aggregation
+  const allResults = [...evaluatedResults, ...errorFailures];
+
+  const notifiableFailures = allResults
+    .filter((r) => r.result.conclusion === "failure" && r.rule.notify !== false)
+    .map((r) => ({
+      ruleName: r.rule.name,
+      title: r.result.title,
+      summary: r.result.summary,
+    }));
+
+  try {
+    if (notifiableFailures.length > 0) {
+      await postOrUpdateFailureComment(octokit, owner, repo, pr.number, notifiableFailures, logger);
+    } else if (allResults.length > 0) {
+      await updateCommentToSuccess(octokit, owner, repo, pr.number, logger);
+    }
+  } catch (commentError) {
+    logger.error({ error: commentError }, "Failed to post/update PR comment notification");
   }
 }
 
@@ -69,7 +110,12 @@ interface SingleRuleParams {
   logger: Logger;
 }
 
-async function evaluateSingleRule(params: SingleRuleParams): Promise<void> {
+interface RuleEvalResult {
+  rule: Rule;
+  result: CheckResult;
+}
+
+async function evaluateSingleRule(params: SingleRuleParams): Promise<RuleEvalResult | null> {
   const { octokit, owner, repo, pr, rule, logger } = params;
   const name = checkRunName(rule.name);
   const ruleLogger = logger.child({ rule: rule.name, checkType: rule.check_type });
@@ -96,7 +142,7 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<void> {
     } else {
       ruleLogger.debug("No matching files — skipping (no existing check)");
     }
-    return;
+    return null;
   }
 
   // Files match — create/update check as in_progress
@@ -171,7 +217,7 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<void> {
     });
 
     ruleLogger.info({ pending: result.title }, "External status check pending — waiting for required checks");
-    return;
+    return null;
   }
 
   // Update check run with result
@@ -189,6 +235,8 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<void> {
   });
 
   ruleLogger.info({ conclusion: result.conclusion }, "Rule evaluation complete");
+
+  return { rule, result };
 }
 
 async function postErrorCheck(

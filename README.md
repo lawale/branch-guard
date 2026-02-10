@@ -55,6 +55,7 @@ rules:
     failure_message:           # Optional custom failure output
       title: string            # Override default failure title
       summary: string          # Override default failure summary
+    notify: boolean            # Post PR comment on failure (default: true)
 ```
 
 Rules are limited to 20 per config file. Each rule produces a check run named `branch-guard/{ruleName}`.
@@ -226,6 +227,30 @@ rules:
 
 Both fields are optional — you can override just the title, just the summary, or both. Custom messages only apply on failure; success output is always the check type's default.
 
+## PR Comment Notifications
+
+GitHub does not send notifications for third-party check run failures. BranchGuard compensates by posting a sticky PR comment when any check fails, so the PR author is always notified.
+
+- **One comment per PR** — BranchGuard finds its own comment by a hidden marker and updates it in place. The first failure creates the comment (triggering a GitHub notification); subsequent evaluations update it silently.
+- **Success update** — When all previously failing checks pass, the comment is updated to show all checks resolved.
+- **Opt-out per rule** — Set `notify: false` on a rule to exclude it from the PR comment. The check run itself still runs; only the comment notification is suppressed.
+
+```yaml
+rules:
+  - name: internal-check
+    description: "This check runs silently"
+    check_type: file_presence
+    on:
+      branches: [main]
+      paths:
+        include: ["internal/**"]
+    config:
+      mode: base_subset_of_head
+    notify: false
+```
+
+> **Note:** Requires the **Issues: Write** permission to post and update PR comments.
+
 ## Commands
 
 Comment on a PR to trigger a recheck:
@@ -283,6 +308,7 @@ npm run typecheck   # Type-check without emitting
 | Checks | Read & Write | Create and update check runs |
 | Contents | Read | Fetch config file and Git trees |
 | Pull Requests | Read & Write | Fetch changed files/reviews; request reviewers (`auto_request_reviewers`) |
+| Issues | Write | Post and update PR comment notifications |
 | Organization Members | Read | Resolve team memberships (for `approval_gate`) |
 | Metadata | Read | Default |
 

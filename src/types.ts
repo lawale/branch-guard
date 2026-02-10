@@ -24,6 +24,7 @@ const BaseRuleFields = {
   description: z.string(),
   on: OnSchema,
   failure_message: FailureMessageSchema,
+  notify: z.boolean().optional().default(true),
 };
 
 const FilePresenceConfigSchema = z.object({

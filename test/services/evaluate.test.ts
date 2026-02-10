@@ -29,11 +29,15 @@ function createMockOctokit() {
       if (url.includes("commits") && url.includes("check-runs")) {
         return Promise.resolve({ data: { check_runs: [] } });
       }
-      // createCheckRun
+      // List PR comments (for PR comment notifications)
+      if (url === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+        return Promise.resolve({ data: [] });
+      }
+      // createCheckRun or create PR comment
       if (url.startsWith("POST")) {
         return Promise.resolve({ data: { id: 100 } });
       }
-      // updateCheckRun
+      // updateCheckRun or update PR comment
       if (url.startsWith("PATCH")) {
         return Promise.resolve({ data: {} });
       }
@@ -325,6 +329,184 @@ describe("evaluateRules", () => {
     // mockFilePresence returns success — custom failure messages should NOT apply
     expect(patchCall![1].output.title).toBe("OK");
     expect(patchCall![1].output.summary).toBe("All files present");
+  });
+
+  it("posts failure PR comment when rule fails", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "failing-rule",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 5,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    // Should have posted a PR comment
+    const postCommentCall = octokit.request.mock.calls.find(
+      (call: any[]) => call[0] === "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    );
+    expect(postCommentCall).toBeDefined();
+    expect(postCommentCall![1].issue_number).toBe(5);
+    expect(postCommentCall![1].body).toContain("failing-rule");
+    expect(postCommentCall![1].body).toContain("branch-guard-status");
+  });
+
+  it("does not post failure PR comment when rule has notify: false", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "silent-fail",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+          notify: false,
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 5,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    // Should NOT have posted a PR comment (notify: false suppresses all failures)
+    // But should have attempted to update to success since there are no notifiable failures
+    const postCommentCall = octokit.request.mock.calls.find(
+      (call: any[]) => call[0] === "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    );
+    expect(postCommentCall).toBeUndefined();
+  });
+
+  it("attempts to update comment to success when all checks pass", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "passing-rule",
+          description: "Test",
+          check_type: "file_presence",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { mode: "base_subset_of_head" },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 5,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    // Should have listed comments to find existing bot comment (for success update)
+    const listCommentsCalls = octokit.request.mock.calls.filter(
+      (call: any[]) => call[0] === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    );
+    expect(listCommentsCalls.length).toBeGreaterThanOrEqual(1);
+
+    // No existing comment found → no PATCH to comment, no POST comment
+    const postCommentCall = octokit.request.mock.calls.find(
+      (call: any[]) => call[0] === "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    );
+    expect(postCommentCall).toBeUndefined();
+  });
+
+  it("does not throw when PR comment notification fails", async () => {
+    const octokit = {
+      request: vi.fn().mockImplementation((url: string) => {
+        // findCheckRun — no existing check
+        if (url.includes("commits") && url.includes("check-runs")) {
+          return Promise.resolve({ data: { check_runs: [] } });
+        }
+        // List PR comments — throw a non-retryable error
+        if (url === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+          return Promise.reject(Object.assign(new Error("Forbidden"), { status: 403 }));
+        }
+        // createCheckRun
+        if (url.startsWith("POST")) {
+          return Promise.resolve({ data: { id: 100 } });
+        }
+        // updateCheckRun
+        if (url.startsWith("PATCH")) {
+          return Promise.resolve({ data: {} });
+        }
+        return Promise.resolve({ data: {} });
+      }),
+    } as any;
+
+    const logger = createLogger();
+    const config: Config = {
+      rules: [
+        {
+          name: "fail-with-broken-comments",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+        },
+      ],
+    };
+
+    // Should not throw even when comment API fails
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 5,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger,
+    });
+
+    // Check run should still have been updated
+    const patchCall = octokit.request.mock.calls.find(
+      (call: any[]) => typeof call[0] === "string" && call[0].startsWith("PATCH"),
+    );
+    expect(patchCall).toBeDefined();
   });
 
   it("uses default messages when failure_message is not configured", async () => {
