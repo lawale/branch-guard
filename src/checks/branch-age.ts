@@ -1,5 +1,6 @@
 import type { CheckContext, CheckResult, BranchAgeRule } from "../types.js";
 import type { CheckType } from "../types.js";
+import { withRetry } from "../services/retry.js";
 
 export class BranchAgeCheck implements CheckType {
   name = "branch_age";
@@ -8,13 +9,15 @@ export class BranchAgeCheck implements CheckType {
     const rule = ctx.rule as BranchAgeRule;
     const { max_age_days } = rule.config;
 
-    const response = await ctx.octokit.request(
-      "GET /repos/{owner}/{repo}/compare/{basehead}",
-      {
-        owner: ctx.owner,
-        repo: ctx.repo,
-        basehead: `${ctx.pr.baseSha}...${ctx.pr.headSha}`,
-      },
+    const response = await withRetry(() =>
+      ctx.octokit.request(
+        "GET /repos/{owner}/{repo}/compare/{basehead}",
+        {
+          owner: ctx.owner,
+          repo: ctx.repo,
+          basehead: `${ctx.pr.baseSha}...${ctx.pr.headSha}`,
+        },
+      ),
     );
 
     const mergeBaseDate =

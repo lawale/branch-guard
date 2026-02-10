@@ -1,6 +1,7 @@
 import * as yaml from "js-yaml";
 import { ConfigSchema, type Config, type ConfigLoadResult } from "../types.js";
 import { TtlCache } from "./cache.js";
+import { withRetry } from "./retry.js";
 import type { Octokit } from "@octokit/core";
 
 const CONFIG_PATH = ".github/branch-guard.yml";
@@ -37,7 +38,7 @@ async function fetchAndParse(
     const params: Record<string, string> = { owner, repo, path: CONFIG_PATH };
     if (ref) params.ref = ref;
 
-    const response = await octokit.request("GET /repos/{owner}/{repo}/contents/{path}", params as any);
+    const response = await withRetry(() => octokit.request("GET /repos/{owner}/{repo}/contents/{path}", params as any));
     const data = response.data as any;
 
     if (data.type !== "file" || !data.content) {

@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/core";
 import type { Logger } from "pino";
+import { withRetry } from "./retry.js";
 
 const PER_PAGE = 100;
 const LARGE_PR_THRESHOLD = 1000;
@@ -19,9 +20,11 @@ export async function getPrChangedFiles(
   let page = 1;
 
   while (true) {
-    const response = await octokit.request(
-      "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
-      { owner, repo, pull_number: prNumber, per_page: PER_PAGE, page },
+    const response = await withRetry(() =>
+      octokit.request(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
+        { owner, repo, pull_number: prNumber, per_page: PER_PAGE, page },
+      ),
     );
 
     const data = response.data as any[];

@@ -1,5 +1,6 @@
 import type { CheckContext, CheckResult, ExternalStatusRule } from "../types.js";
 import type { CheckType } from "../types.js";
+import { withRetry } from "../services/retry.js";
 
 export interface PendingEvaluation {
   owner: string;
@@ -187,14 +188,16 @@ export class ExternalStatusCheck implements CheckType {
     ctx: CheckContext,
     requiredChecks: string[],
   ): Promise<ExternalCheckStatus[]> {
-    const response = await ctx.octokit.request(
-      "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
-      {
-        owner: ctx.owner,
-        repo: ctx.repo,
-        ref: ctx.pr.headSha,
-        per_page: 100,
-      },
+    const response = await withRetry(() =>
+      ctx.octokit.request(
+        "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+        {
+          owner: ctx.owner,
+          repo: ctx.repo,
+          ref: ctx.pr.headSha,
+          per_page: 100,
+        },
+      ),
     );
 
     const allRuns = (response.data as any).check_runs as Array<{

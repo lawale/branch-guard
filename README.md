@@ -11,6 +11,7 @@ BranchGuard is not a CI runner. It evaluates conditions using the GitHub API and
 - **Changelog enforcement** — Require `CHANGELOG.md` updates when source code changes
 - **Conditional CI** — Only require lint/typecheck status checks when relevant files change
 - **Proto sync** — Ensure protobuf files haven't diverged from the base branch
+- **Stale branch detection** — Fail PRs from branches that diverged more than N days ago
 
 ## Quick Start
 
@@ -43,7 +44,7 @@ All configuration lives in `.github/branch-guard.yml` on your repository's defau
 rules:
   - name: string              # Unique ID (lowercase alphanumeric + hyphens)
     description: string        # Shown in check run output
-    check_type: enum           # file_presence | file_pair | external_status
+    check_type: enum           # file_presence | file_pair | external_status | branch_age
     on:
       branches: string[]       # Base branches this rule applies to
       paths:
@@ -124,6 +125,28 @@ Makes another check run conditionally required. When matching files change, the 
 
 BranchGuard uses a hybrid approach: it listens for `check_run.completed` webhooks to resolve pending checks reactively, with fallback re-evaluation on PR updates.
 
+### `branch_age`
+
+Fails if the PR branch diverged from the base branch more than a configurable number of days ago. Encourages developers to keep branches fresh and rebased.
+
+```yaml
+- name: stale-branch
+  description: "Branch must not be older than 14 days"
+  check_type: branch_age
+  on:
+    branches: [main]
+    paths:
+      include: ["**/*"]
+  config:
+    max_age_days: 14
+```
+
+| Config Field | Type | Description |
+|---|---|---|
+| `max_age_days` | number | Maximum allowed age in days (branch age <= limit passes) |
+
+BranchGuard uses the GitHub Compare API to determine the merge base commit date. If the branch diverged more than `max_age_days` ago, the check fails with a message suggesting a rebase.
+
 ## Commands
 
 Comment on a PR to trigger a recheck:
@@ -193,6 +216,7 @@ npm run typecheck   # Type-check without emitting
 - **Event-driven** — responds to webhooks, no polling loops
 - **Cached** — 60s in-memory TTL cache for config and Git tree responses
 - **Fault-tolerant** — each rule evaluation is isolated; one failure doesn't block others
+- **Resilient** — automatic retry with exponential backoff for GitHub API rate limits (429, 403) and transient errors (5xx)
 
 See [branch-guard-spec.md](branch-guard-spec.md) for the full technical specification.
 

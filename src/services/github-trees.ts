@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/core";
 import { TtlCache } from "./cache.js";
 import { matchFiles } from "./file-matcher.js";
+import { withRetry } from "./retry.js";
 
 interface TreeEntry {
   path: string;
@@ -42,9 +43,11 @@ export async function getTree(
   const cached = treeCache.get(cacheKey);
   if (cached) return cached;
 
-  const response = await octokit.request(
-    "GET /repos/{owner}/{repo}/git/trees/{tree_sha}",
-    { owner, repo, tree_sha: sha, recursive: "true" },
+  const response = await withRetry(() =>
+    octokit.request(
+      "GET /repos/{owner}/{repo}/git/trees/{tree_sha}",
+      { owner, repo, tree_sha: sha, recursive: "true" },
+    ),
   );
 
   const data = response.data as any;

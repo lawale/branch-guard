@@ -239,10 +239,10 @@ rules:
   });
 
   it("re-throws non-404 API errors", async () => {
-    const error: any = new Error("Server Error");
-    error.status = 500;
+    const error: any = new Error("Unauthorized");
+    error.status = 401;
     const octokit = createMockOctokit(error);
 
-    await expect(loadConfig(octokit, "owner", "repo")).rejects.toThrow("Server Error");
+    await expect(loadConfig(octokit, "owner", "repo")).rejects.toThrow("Unauthorized");
   });
 });
