@@ -238,6 +238,92 @@ rules:
     }
   });
 
+  it("loads and parses a valid approval_gate config with required_teams", async () => {
+    const approvalConfig = `
+rules:
+  - name: api-approval
+    description: "API changes require backend team approval"
+    check_type: approval_gate
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "api/**"
+    config:
+      required_teams:
+        - backend-team
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(approvalConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].check_type).toBe("approval_gate");
+      if (result.config.rules[0].check_type === "approval_gate") {
+        expect(result.config.rules[0].config.required_teams).toEqual(["backend-team"]);
+        expect(result.config.rules[0].config.mode).toBe("any");
+      }
+    }
+  });
+
+  it("loads and parses a valid approval_gate config with required_users and mode all", async () => {
+    const approvalConfig = `
+rules:
+  - name: security-approval
+    description: "Security changes require multiple approvals"
+    check_type: approval_gate
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "security/**"
+    config:
+      required_teams:
+        - security
+      required_users:
+        - security-lead
+      mode: all
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(approvalConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].check_type).toBe("approval_gate");
+      if (result.config.rules[0].check_type === "approval_gate") {
+        expect(result.config.rules[0].config.required_teams).toEqual(["security"]);
+        expect(result.config.rules[0].config.required_users).toEqual(["security-lead"]);
+        expect(result.config.rules[0].config.mode).toBe("all");
+      }
+    }
+  });
+
+  it("returns invalid when approval_gate has neither teams nor users", async () => {
+    const invalidApprovalConfig = `
+rules:
+  - name: bad-approval
+    description: "Missing both teams and users"
+    check_type: approval_gate
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "**/*"
+    config:
+      mode: any
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(invalidApprovalConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("invalid");
+  });
+
   it("re-throws non-404 API errors", async () => {
     const error: any = new Error("Unauthorized");
     error.status = 401;

@@ -12,6 +12,7 @@ BranchGuard is not a CI runner. It evaluates conditions using the GitHub API and
 - **Conditional CI** — Only require lint/typecheck status checks when relevant files change
 - **Proto sync** — Ensure protobuf files haven't diverged from the base branch
 - **Stale branch detection** — Fail PRs from branches that diverged more than N days ago
+- **Team approval gates** — Require approving reviews from specific teams or users when certain files change
 
 ## Quick Start
 
@@ -44,7 +45,7 @@ All configuration lives in `.github/branch-guard.yml` on your repository's defau
 rules:
   - name: string              # Unique ID (lowercase alphanumeric + hyphens)
     description: string        # Shown in check run output
-    check_type: enum           # file_presence | file_pair | external_status | branch_age
+    check_type: enum           # file_presence | file_pair | external_status | branch_age | approval_gate
     on:
       branches: string[]       # Base branches this rule applies to
       paths:
@@ -147,6 +148,51 @@ Fails if the PR branch diverged from the base branch more than a configurable nu
 
 BranchGuard uses the GitHub Compare API to determine the merge base commit date. If the branch diverged more than `max_age_days` ago, the check fails with a message suggesting a rebase.
 
+### `approval_gate`
+
+Requires approving PR reviews from specific teams or users when matching files change. Works like CODEOWNERS but scoped per-rule with configurable team/user requirements.
+
+```yaml
+- name: api-approval
+  description: "API changes require backend team approval"
+  check_type: approval_gate
+  on:
+    branches: [main]
+    paths:
+      include: ["api/**"]
+  config:
+    required_teams:
+      - backend-team
+```
+
+With multiple requirements and `mode: all`:
+
+```yaml
+- name: security-approval
+  description: "Security changes require all reviewers"
+  check_type: approval_gate
+  on:
+    branches: [main]
+    paths:
+      include: ["security/**", "auth/**"]
+  config:
+    required_teams:
+      - security
+    required_users:
+      - security-lead
+    mode: all
+```
+
+| Config Field | Type | Description |
+|---|---|---|
+| `required_teams` | string[] | Team slugs whose members can approve (optional) |
+| `required_users` | string[] | GitHub usernames who can approve (optional) |
+| `mode` | enum | `any` (default) — at least one requirement met. `all` — every requirement met. |
+
+At least one of `required_teams` or `required_users` must be provided. The check evaluates the latest review from each reviewer — if any required reviewer has requested changes, the check fails regardless of other approvals. Username matching is case-insensitive. The check re-evaluates on PR sync or `/recheck`.
+
+> **Note:** Requires the **Organization Members: Read** permission on the GitHub App to resolve team memberships.
+
 ## Commands
 
 Comment on a PR to trigger a recheck:
@@ -203,7 +249,8 @@ npm run typecheck   # Type-check without emitting
 |---|---|---|
 | Checks | Read & Write | Create and update check runs |
 | Contents | Read | Fetch config file and Git trees |
-| Pull Requests | Read | Fetch changed files |
+| Pull Requests | Read | Fetch changed files and reviews |
+| Organization Members | Read | Resolve team memberships (for `approval_gate`) |
 | Metadata | Read | Default |
 
 ### Required Webhook Events
