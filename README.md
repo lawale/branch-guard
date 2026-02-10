@@ -52,6 +52,9 @@ rules:
         include: string[]      # Glob patterns that trigger the rule
         exclude: string[]      # Glob patterns to exclude (optional)
     config: object             # Check-type-specific (see below)
+    failure_message:           # Optional custom failure output
+      title: string            # Override default failure title
+      summary: string          # Override default failure summary
 ```
 
 Rules are limited to 20 per config file. Each rule produces a check run named `branch-guard/{ruleName}`.
@@ -192,6 +195,33 @@ With multiple requirements and `mode: all`:
 At least one of `required_teams` or `required_users` must be provided. The check evaluates the latest review from each reviewer — if any required reviewer has requested changes, the check fails regardless of other approvals. Username matching is case-insensitive. The check re-evaluates on PR sync or `/recheck`.
 
 > **Note:** Requires the **Organization Members: Read** permission on the GitHub App to resolve team memberships.
+
+## Custom Failure Messages
+
+Any rule can include an optional `failure_message` to override the default failure output with team-specific guidance:
+
+```yaml
+rules:
+  - name: migration-sync
+    description: "Ensure PR has all base branch migrations"
+    check_type: file_presence
+    on:
+      branches: [main]
+      paths:
+        include: ["**/Migrations/**/*.cs"]
+    config:
+      mode: base_subset_of_head
+    failure_message:
+      title: "Missing migrations — rebase required"
+      summary: "This PR is missing migration files from main. See wiki/migrations for help."
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `failure_message.title` | string | Replaces the default failure title (optional) |
+| `failure_message.summary` | string | Replaces the default failure summary (optional) |
+
+Both fields are optional — you can override just the title, just the summary, or both. Custom messages only apply on failure; success output is always the check type's default.
 
 ## Commands
 

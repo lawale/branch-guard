@@ -134,6 +134,12 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<void> {
     logger: ruleLogger,
   });
 
+  // Apply custom failure message overrides if configured
+  if (result.conclusion === "failure" && rule.failure_message) {
+    if (rule.failure_message.title) result.title = rule.failure_message.title;
+    if (rule.failure_message.summary) result.summary = rule.failure_message.summary;
+  }
+
   // For external_status checks that are still waiting on other checks,
   // leave the check run as in_progress and store pending state
   if (rule.check_type === "external_status" && result.title.startsWith("Waiting for:")) {

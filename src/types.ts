@@ -14,10 +14,16 @@ const OnSchema = z.object({
   paths: PathsSchema,
 });
 
+const FailureMessageSchema = z.object({
+  title: z.string().optional(),
+  summary: z.string().optional(),
+}).optional();
+
 const BaseRuleFields = {
   name: z.string().regex(/^[a-z0-9-]+$/, "Rule name must be lowercase alphanumeric with hyphens"),
   description: z.string(),
   on: OnSchema,
+  failure_message: FailureMessageSchema,
 };
 
 const FilePresenceConfigSchema = z.object({

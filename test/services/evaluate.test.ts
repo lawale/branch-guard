@@ -201,6 +201,169 @@ describe("evaluateRules", () => {
 
     expect(logger.error).toHaveBeenCalled();
   });
+
+  it("overrides failure title and summary when failure_message is configured", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "custom-fail",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+          failure_message: {
+            title: "Custom fail title",
+            summary: "Custom fail summary",
+          },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 1,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    // Find the PATCH call (updateCheckRun)
+    const patchCall = octokit.request.mock.calls.find(
+      (call: any[]) => typeof call[0] === "string" && call[0].startsWith("PATCH"),
+    );
+    expect(patchCall).toBeDefined();
+    expect(patchCall![1].output.title).toBe("Custom fail title");
+    expect(patchCall![1].output.summary).toBe("Custom fail summary");
+  });
+
+  it("overrides only failure title when only title is provided in failure_message", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "partial-override",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+          failure_message: {
+            title: "Only title overridden",
+          },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 1,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    const patchCall = octokit.request.mock.calls.find(
+      (call: any[]) => typeof call[0] === "string" && call[0].startsWith("PATCH"),
+    );
+    expect(patchCall).toBeDefined();
+    expect(patchCall![1].output.title).toBe("Only title overridden");
+    // Default summary from mockFilePair should be preserved
+    expect(patchCall![1].output.summary).toBe("Companion not updated");
+  });
+
+  it("does not override success messages even when failure_message is configured", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "success-no-override",
+          description: "Test",
+          check_type: "file_presence",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { mode: "base_subset_of_head" },
+          failure_message: {
+            title: "Should not appear",
+            summary: "Should not appear",
+          },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 1,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    const patchCall = octokit.request.mock.calls.find(
+      (call: any[]) => typeof call[0] === "string" && call[0].startsWith("PATCH"),
+    );
+    expect(patchCall).toBeDefined();
+    // mockFilePresence returns success — custom failure messages should NOT apply
+    expect(patchCall![1].output.title).toBe("OK");
+    expect(patchCall![1].output.summary).toBe("All files present");
+  });
+
+  it("uses default messages when failure_message is not configured", async () => {
+    const octokit = createMockOctokit();
+    const config: Config = {
+      rules: [
+        {
+          name: "no-override",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "package-lock.json" },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 1,
+        headSha: "abc123",
+        baseBranch: "main",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    const patchCall = octokit.request.mock.calls.find(
+      (call: any[]) => typeof call[0] === "string" && call[0].startsWith("PATCH"),
+    );
+    expect(patchCall).toBeDefined();
+    // Default messages from mockFilePair
+    expect(patchCall![1].output.title).toBe("Missing companion");
+    expect(patchCall![1].output.summary).toBe("Companion not updated");
+  });
 });
 
 describe("postConfigError", () => {

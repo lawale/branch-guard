@@ -324,6 +324,77 @@ rules:
     expect(result.status).toBe("invalid");
   });
 
+  it("loads a valid config with failure_message on a rule", async () => {
+    const configWithFailureMsg = `
+rules:
+  - name: migration-sync
+    description: "Ensure PR has all base branch migrations"
+    check_type: file_presence
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "**/Migrations/**/*.cs"
+    config:
+      mode: base_subset_of_head
+    failure_message:
+      title: "Missing migrations — rebase required"
+      summary: "See wiki/migrations for help."
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(configWithFailureMsg) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].failure_message).toEqual({
+        title: "Missing migrations — rebase required",
+        summary: "See wiki/migrations for help.",
+      });
+    }
+  });
+
+  it("loads a valid config with partial failure_message (title only)", async () => {
+    const configWithPartialMsg = `
+rules:
+  - name: lockfile-check
+    description: "package-lock.json must update"
+    check_type: file_pair
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "package.json"
+    config:
+      companion: "package-lock.json"
+    failure_message:
+      title: "Run npm install and commit the lockfile"
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(configWithPartialMsg) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].failure_message?.title).toBe("Run npm install and commit the lockfile");
+      expect(result.config.rules[0].failure_message?.summary).toBeUndefined();
+    }
+  });
+
+  it("loads a valid config without failure_message (backward compat)", async () => {
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(validConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].failure_message).toBeUndefined();
+    }
+  });
+
   it("re-throws non-404 API errors", async () => {
     const error: any = new Error("Unauthorized");
     error.status = 401;
