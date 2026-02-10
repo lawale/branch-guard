@@ -4,6 +4,7 @@ import { registerCheck } from "./checks/index.js";
 import { FilePresenceCheck } from "./checks/file-presence.js";
 import { FilePairCheck } from "./checks/file-pair.js";
 import { ExternalStatusCheck } from "./checks/external-status.js";
+import { BranchAgeCheck } from "./checks/branch-age.js";
 import { registerPullRequestHandler } from "./handlers/pull-request.js";
 import { registerPushHandler } from "./handlers/push.js";
 import { registerCheckSuiteHandler } from "./handlers/check-suite.js";
@@ -14,6 +15,7 @@ import { registerIssueCommentHandler } from "./handlers/issue-comment.js";
 registerCheck(new FilePresenceCheck());
 registerCheck(new FilePairCheck());
 registerCheck(new ExternalStatusCheck());
+registerCheck(new BranchAgeCheck());
 
 export default function app(robot: Probot, { getRouter }: ApplicationFunctionOptions): void {
   // Health check endpoint for container orchestration

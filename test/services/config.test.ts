@@ -210,6 +210,34 @@ describe("loadConfig", () => {
     expect(octokit.request).toHaveBeenCalledTimes(1);
   });
 
+  it("loads and parses a valid branch_age config", async () => {
+    const branchAgeConfig = `
+rules:
+  - name: stale-branch
+    description: "Fail if branch diverged more than 14 days ago"
+    check_type: branch_age
+    on:
+      branches: [main]
+      paths:
+        include:
+          - "**/*"
+    config:
+      max_age_days: 14
+`;
+    const octokit = createMockOctokit({
+      data: { type: "file", content: yamlToBase64(branchAgeConfig) },
+    });
+
+    const result = await loadConfig(octokit, "owner", "repo");
+    expect(result.status).toBe("loaded");
+    if (result.status === "loaded") {
+      expect(result.config.rules[0].check_type).toBe("branch_age");
+      if (result.config.rules[0].check_type === "branch_age") {
+        expect(result.config.rules[0].config.max_age_days).toBe(14);
+      }
+    }
+  });
+
   it("re-throws non-404 API errors", async () => {
     const error: any = new Error("Server Error");
     error.status = 500;

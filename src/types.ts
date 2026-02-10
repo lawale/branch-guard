@@ -34,6 +34,10 @@ const ExternalStatusConfigSchema = z.object({
   timeout_minutes: z.number().positive().optional().default(30),
 });
 
+const BranchAgeConfigSchema = z.object({
+  max_age_days: z.number().positive(),
+});
+
 const FilePresenceRuleSchema = z.object({
   ...BaseRuleFields,
   check_type: z.literal("file_presence"),
@@ -52,10 +56,17 @@ const ExternalStatusRuleSchema = z.object({
   config: ExternalStatusConfigSchema,
 });
 
+const BranchAgeRuleSchema = z.object({
+  ...BaseRuleFields,
+  check_type: z.literal("branch_age"),
+  config: BranchAgeConfigSchema,
+});
+
 export const RuleSchema = z.discriminatedUnion("check_type", [
   FilePresenceRuleSchema,
   FilePairRuleSchema,
   ExternalStatusRuleSchema,
+  BranchAgeRuleSchema,
 ]);
 
 export const ConfigSchema = z.object({
@@ -67,6 +78,7 @@ export const ConfigSchema = z.object({
 export type FilePresenceConfig = z.infer<typeof FilePresenceConfigSchema>;
 export type FilePairConfig = z.infer<typeof FilePairConfigSchema>;
 export type ExternalStatusConfig = z.infer<typeof ExternalStatusConfigSchema>;
+export type BranchAgeConfig = z.infer<typeof BranchAgeConfigSchema>;
 
 export type Rule = z.infer<typeof RuleSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
@@ -74,6 +86,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 export type FilePresenceRule = z.infer<typeof FilePresenceRuleSchema>;
 export type FilePairRule = z.infer<typeof FilePairRuleSchema>;
 export type ExternalStatusRule = z.infer<typeof ExternalStatusRuleSchema>;
+export type BranchAgeRule = z.infer<typeof BranchAgeRuleSchema>;
 
 // --- Check Type Interface ---
 
