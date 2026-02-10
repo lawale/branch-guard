@@ -7,6 +7,7 @@ function createMockContext(
   baseTreeFiles: string[],
   headTreeFiles: string[],
   rule?: Partial<FilePresenceRule>,
+  prBody?: string,
 ): CheckContext {
   const baseTree = baseTreeFiles.map((path) => ({ path, type: "blob", sha: "a" }));
   const headTree = headTreeFiles.map((path) => ({ path, type: "blob", sha: "b" }));
@@ -45,6 +46,7 @@ function createMockContext(
       baseBranch: "main",
       baseSha: "base123",
       changedFiles: [],
+      prBody,
     },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn().mockReturnThis() } as any,
   };
@@ -127,5 +129,78 @@ describe("FilePresenceCheck", () => {
 
     const result = await check.execute(ctx);
     expect(result.conclusion).toBe("success");
+  });
+
+  describe("PR body allowlist", () => {
+    it("passes when all missing files are in the allowlist", async () => {
+      const prBody = `<!-- branch-guard:allow
+migration-sync: Models/Migrations/20260102_AddUsers.cs (consolidated)
+-->`;
+      const ctx = createMockContext(
+        ["Models/Migrations/20260101_Init.cs", "Models/Migrations/20260102_AddUsers.cs"],
+        ["Models/Migrations/20260101_Init.cs"],
+        undefined,
+        prBody,
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("success");
+      expect(result.title).toContain("1 allowed deletion(s)");
+      expect(result.details).toContain("20260102_AddUsers.cs");
+      expect(result.details).toContain("consolidated");
+    });
+
+    it("still fails when some missing files are not in the allowlist", async () => {
+      const prBody = `<!-- branch-guard:allow
+migration-sync: Models/Migrations/20260102_AddUsers.cs (consolidated)
+-->`;
+      const ctx = createMockContext(
+        [
+          "Models/Migrations/20260101_Init.cs",
+          "Models/Migrations/20260102_AddUsers.cs",
+          "Models/Migrations/20260103_AddRoles.cs",
+        ],
+        ["Models/Migrations/20260101_Init.cs"],
+        undefined,
+        prBody,
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toContain("Missing 1 file(s)");
+      expect(result.details).toContain("20260103_AddRoles.cs");
+      // Allowed file should still be reported
+      expect(result.details).toContain("Allowed deletions");
+      expect(result.details).toContain("20260102_AddUsers.cs");
+    });
+
+    it("ignores allowlist entries for different rule names", async () => {
+      const prBody = `<!-- branch-guard:allow
+other-rule: Models/Migrations/20260102_AddUsers.cs (wrong rule)
+-->`;
+      const ctx = createMockContext(
+        ["Models/Migrations/20260101_Init.cs", "Models/Migrations/20260102_AddUsers.cs"],
+        ["Models/Migrations/20260101_Init.cs"],
+        undefined,
+        prBody,
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toContain("Missing 1 file(s)");
+    });
+
+    it("behaves normally when prBody is undefined", async () => {
+      const ctx = createMockContext(
+        ["Models/Migrations/20260101_Init.cs", "Models/Migrations/20260102_AddUsers.cs"],
+        ["Models/Migrations/20260101_Init.cs"],
+        undefined,
+        undefined,
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toContain("Missing 1 file(s)");
+    });
   });
 });

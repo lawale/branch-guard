@@ -163,6 +163,7 @@ async function evaluateOpenPrs(
               baseBranch: pr.base.ref,
               baseSha: pr.base.sha,
               changedFiles,
+              prBody: pr.body ?? undefined,
             },
             config,
             logger: prLogger,

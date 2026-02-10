@@ -15,11 +15,11 @@ export function registerPullRequestHandler(app: Probot): void {
     async (context: Context<"pull_request"> | Context<"pull_request_review">) => {
       const { payload } = context;
 
-      // For 'edited' events, only re-evaluate if the base branch changed
+      // For 'edited' events, only re-evaluate if the base branch or body changed
       if (payload.action === "edited") {
         const changes = (payload as any).changes;
-        if (!changes?.base) {
-          context.log.debug("PR edited but base branch unchanged — skipping");
+        if (!changes?.base && !changes?.body) {
+          context.log.debug("PR edited but base branch and body unchanged — skipping");
           return;
         }
       }
@@ -78,6 +78,7 @@ export function registerPullRequestHandler(app: Probot): void {
           baseBranch: pr.base.ref,
           baseSha: pr.base.sha,
           changedFiles,
+          prBody: pr.body ?? undefined,
         },
         config: configResult.config,
         logger,

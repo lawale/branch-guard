@@ -227,6 +227,38 @@ rules:
 
 Both fields are optional — you can override just the title, just the summary, or both. Custom messages only apply on failure; success output is always the check type's default.
 
+## Allowing File Deletions
+
+When using `file_presence` with `mode: base_subset_of_head`, the check fails if a file exists on the base branch but is missing on the head branch. If the deletion is intentional, you can add an allowlist to the PR description.
+
+Add an HTML comment block in the PR body:
+
+```
+<!-- branch-guard:allow
+rule-name: path/to/file.sql (reason for deletion)
+rule-name: path/to/other.sql (another reason)
+-->
+```
+
+- Each line: `rule-name: file-path (optional reason)`
+- The rule name must match the `name` field in your config
+- File paths must be exact matches (not glob patterns)
+- The reason in parentheses is optional but recommended for reviewers
+- The block must be inside an HTML comment so it doesn't render in the PR
+
+**Example:**
+
+```
+<!-- branch-guard:allow
+migration-sync: db/migrations/001_init.sql (replaced by consolidated migration)
+migration-sync: db/migrations/002_users.sql (merged into 003)
+-->
+```
+
+When allowed files are present, the check passes but reports the overrides in the check run details so reviewers can verify the deletions are appropriate. Editing the PR body triggers an automatic re-evaluation.
+
+> **Note:** The allowlist only applies to `file_presence` checks.
+
 ## PR Comment Notifications
 
 GitHub does not send notifications for third-party check run failures. BranchGuard compensates by posting a sticky PR comment when any check fails, so the PR author is always notified.

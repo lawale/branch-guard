@@ -86,6 +86,7 @@ describe("issue-comment handler", () => {
                 number: 42,
                 head: { sha: "abc123" },
                 base: { ref: "main", sha: "base456" },
+                body: "Some PR description",
               },
             });
           }
@@ -210,6 +211,7 @@ describe("issue-comment handler", () => {
           baseBranch: "main",
           baseSha: "base456",
           changedFiles: ["src/file.ts"],
+          prBody: "Some PR description",
         }),
       }),
     );

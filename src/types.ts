@@ -123,6 +123,7 @@ export interface PullRequestContext {
   baseBranch: string;
   baseSha: string;
   changedFiles: string[];
+  prBody?: string;
 }
 
 export interface CheckContext {

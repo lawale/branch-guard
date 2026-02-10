@@ -49,10 +49,17 @@ export function registerCheckSuiteHandler(app: Probot): void {
     }
 
     // Evaluate rules for each associated PR
-    for (const pr of pullRequests) {
-      const prLogger = logger.child({ pr: pr.number });
+    for (const prStub of pullRequests) {
+      const prLogger = logger.child({ pr: prStub.number });
 
       try {
+        // Fetch full PR data to get body (webhook payload has minimal PR info)
+        const prResponse = await context.octokit.request(
+          "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+          { owner, repo, pull_number: prStub.number },
+        );
+        const pr = prResponse.data as any;
+
         const changedFiles = await getPrChangedFiles(
           context.octokit as any,
           owner,
@@ -71,6 +78,7 @@ export function registerCheckSuiteHandler(app: Probot): void {
             baseBranch: pr.base.ref,
             baseSha: pr.base.sha,
             changedFiles,
+            prBody: pr.body ?? undefined,
           },
           config: configResult.config,
           logger: prLogger,
