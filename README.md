@@ -232,6 +232,7 @@ Both fields are optional — you can override just the title, just the summary, 
 GitHub does not send notifications for third-party check run failures. BranchGuard compensates by posting a sticky PR comment when any check fails, so the PR author is always notified.
 
 - **One comment per PR** — BranchGuard finds its own comment by a hidden marker and updates it in place. The first failure creates the comment (triggering a GitHub notification); subsequent evaluations update it silently.
+- **Recheck link** — Failure comments include a direct link to the PR comment box so you can quickly post `/recheck`.
 - **Success update** — When all previously failing checks pass, the comment is updated to show all checks resolved.
 - **Opt-out per rule** — Set `notify: false` on a rule to exclude it from the PR comment. The check run itself still runs; only the comment notification is suppressed.
 
@@ -257,6 +258,8 @@ Comment on a PR to trigger a recheck:
 
 - `/recheck` — re-evaluate all BranchGuard rules for this PR
 - `/branch-guard recheck` — same as above
+
+The `/recheck` comment is automatically deleted after processing to keep the PR timeline clean.
 
 ## Self-Hosting
 

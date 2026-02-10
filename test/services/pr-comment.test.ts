@@ -93,6 +93,22 @@ describe("pr-comment", () => {
       expect(body).toContain("Lockfile outdated");
       expect(body).toContain("/recheck");
     });
+
+    it("includes clickable recheck link when owner/repo/prNumber provided", () => {
+      const body = buildFailureBody(sampleFailures, "my-org", "my-repo", 42);
+
+      expect(body).toContain("https://github.com/my-org/my-repo/pull/42#issuecomment-new");
+      expect(body).toContain("[🔄 Recheck]");
+      expect(body).toContain("`/recheck`");
+    });
+
+    it("falls back to plain text when owner/repo/prNumber not provided", () => {
+      const body = buildFailureBody(sampleFailures);
+
+      expect(body).not.toContain("https://github.com");
+      expect(body).not.toContain("[🔄 Recheck]");
+      expect(body).toContain("comment `/recheck` to re-evaluate");
+    });
   });
 
   describe("buildSuccessBody", () => {
@@ -197,7 +213,7 @@ describe("pr-comment", () => {
       expect(logger.error).toHaveBeenCalled();
     });
 
-    it("comment body contains expected rule names and failure details", async () => {
+    it("comment body contains expected rule names and failure details with recheck link", async () => {
       const octokit = createMockOctokit({ existingComments: [] });
       const logger = createLogger();
 
@@ -211,6 +227,8 @@ describe("pr-comment", () => {
       expect(body).toContain("| `migration-sync` | ❌ Failed | Missing migrations |");
       expect(body).toContain("| `lockfile-check` | ❌ Failed | Lockfile outdated |");
       expect(body).toContain("2 check(s) failed");
+      expect(body).toContain("https://github.com/owner/repo/pull/1#issuecomment-new");
+      expect(body).toContain("[🔄 Recheck]");
     });
   });
 

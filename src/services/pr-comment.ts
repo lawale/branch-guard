@@ -12,11 +12,23 @@ export interface FailureSummary {
 
 // --- Comment body builders ---
 
-function buildFailureBody(failures: FailureSummary[]): string {
+function buildFailureBody(
+  failures: FailureSummary[],
+  owner?: string,
+  repo?: string,
+  prNumber?: number,
+): string {
   const count = failures.length;
   const rows = failures
     .map((f) => `| \`${f.ruleName}\` | ❌ Failed | ${f.title} |`)
     .join("\n");
+
+  // Build a recheck link that pre-fills the comment box when owner/repo/prNumber are available
+  let recheckAction = "comment `/recheck` to re-evaluate";
+  if (owner && repo && prNumber) {
+    const recheckUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}#issuecomment-new`;
+    recheckAction = `[🔄 Recheck](${recheckUrl}) — comment \`/recheck\` to re-evaluate`;
+  }
 
   return [
     COMMENT_MARKER,
@@ -26,7 +38,7 @@ function buildFailureBody(failures: FailureSummary[]): string {
     "|------|--------|---------|",
     rows,
     "",
-    "> Resolve the issues above and push again, or comment `/recheck` to re-evaluate.",
+    `> Resolve the issues above and push again, or ${recheckAction}.`,
     ">",
     "> *This comment is posted by BranchGuard and updates automatically.*",
   ].join("\n");
@@ -104,7 +116,7 @@ export async function postOrUpdateFailureComment(
 ): Promise<void> {
   try {
     const existing = await findBotComment(octokit, owner, repo, prNumber);
-    const body = buildFailureBody(failures);
+    const body = buildFailureBody(failures, owner, repo, prNumber);
 
     if (existing) {
       await withRetry(() =>

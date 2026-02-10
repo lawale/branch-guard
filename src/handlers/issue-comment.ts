@@ -29,6 +29,19 @@ export function registerIssueCommentHandler(app: Probot): void {
 
     logger.info("Processing /recheck command");
 
+    // Delete the /recheck comment to keep PR timeline clean
+    const commentId = payload.comment.id;
+    try {
+      await context.octokit.request(
+        "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}",
+        { owner, repo, comment_id: commentId },
+      );
+      logger.debug({ commentId }, "Deleted /recheck comment");
+    } catch (error) {
+      // Non-fatal: if deletion fails (e.g. permissions), continue with the recheck
+      logger.warn({ error, commentId }, "Failed to delete /recheck comment — continuing");
+    }
+
     // Load config
     const configResult = await loadConfig(context.octokit as any, owner, repo);
 
