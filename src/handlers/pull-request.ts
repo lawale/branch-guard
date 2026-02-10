@@ -5,8 +5,14 @@ import { evaluateRules, postConfigError } from "../services/evaluate.js";
 
 export function registerPullRequestHandler(app: Probot): void {
   app.on(
-    ["pull_request.opened", "pull_request.synchronize", "pull_request.reopened", "pull_request.edited"],
-    async (context: Context<"pull_request">) => {
+    [
+      "pull_request.opened",
+      "pull_request.synchronize",
+      "pull_request.reopened",
+      "pull_request.edited",
+      "pull_request_review.submitted",
+    ],
+    async (context: Context<"pull_request"> | Context<"pull_request_review">) => {
       const { payload } = context;
 
       // For 'edited' events, only re-evaluate if the base branch changed
