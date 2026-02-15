@@ -190,6 +190,50 @@ other-rule: Models/Migrations/20260102_AddUsers.cs (wrong rule)
       expect(result.title).toContain("Missing 1 file(s)");
     });
 
+    it("includes a ready-to-copy override snippet in failure details", async () => {
+      const ctx = createMockContext(
+        [
+          "Models/Migrations/20260101_Init.cs",
+          "Models/Migrations/20260102_AddUsers.cs",
+          "Models/Migrations/20260103_AddRoles.cs",
+        ],
+        ["Models/Migrations/20260101_Init.cs"],
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.details).toContain("<!-- branch-guard:allow");
+      expect(result.details).toContain("migration-sync: Models/Migrations/20260102_AddUsers.cs (reason for deletion)");
+      expect(result.details).toContain("migration-sync: Models/Migrations/20260103_AddRoles.cs (reason for deletion)");
+      expect(result.details).toContain("-->");
+      expect(result.details).toContain("If these deletions are intentional");
+    });
+
+    it("only includes non-allowed files in the override snippet", async () => {
+      const prBody = `<!-- branch-guard:allow
+migration-sync: Models/Migrations/20260102_AddUsers.cs (consolidated)
+-->`;
+      const ctx = createMockContext(
+        [
+          "Models/Migrations/20260101_Init.cs",
+          "Models/Migrations/20260102_AddUsers.cs",
+          "Models/Migrations/20260103_AddRoles.cs",
+        ],
+        ["Models/Migrations/20260101_Init.cs"],
+        undefined,
+        prBody,
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      // The snippet should only contain the file that's NOT already allowed
+      expect(result.details).toContain("migration-sync: Models/Migrations/20260103_AddRoles.cs (reason for deletion)");
+      // The already-allowed file should NOT appear in the snippet
+      const snippetMatch = result.details!.match(/```\n([\s\S]*?)```/);
+      expect(snippetMatch).toBeTruthy();
+      expect(snippetMatch![1]).not.toContain("20260102_AddUsers.cs");
+    });
+
     it("behaves normally when prBody is undefined", async () => {
       const ctx = createMockContext(
         ["Models/Migrations/20260101_Init.cs", "Models/Migrations/20260102_AddUsers.cs"],

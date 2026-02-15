@@ -63,6 +63,12 @@ export class FilePresenceCheck implements CheckType {
       details += `\n\n**Allowed deletions (via PR description):**\n${allowedList}`;
     }
 
+    // Provide a ready-to-copy override snippet for the missing files
+    const overrideLines = trulyMissing
+      .map((f) => `${rule.name}: ${f} (reason for deletion)`)
+      .join("\n");
+    details += `\n\n---\n**If these deletions are intentional**, add this to your PR description:\n\`\`\`\n<!-- branch-guard:allow\n${overrideLines}\n-->\n\`\`\``;
+
     return {
       conclusion: "failure",
       title: `Missing ${trulyMissing.length} file(s) from ${ctx.pr.baseBranch}`,
