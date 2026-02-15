@@ -88,6 +88,7 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
       ruleName: r.rule.name,
       title: r.result.title,
       summary: r.result.summary,
+      details: r.result.details,
     }));
 
   try {

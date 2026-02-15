@@ -6,6 +6,7 @@ import {
   buildFailureBody,
   buildSuccessBody,
   findBotComment,
+  extractOverrideSnippet,
 } from "../../src/services/pr-comment.js";
 import type { FailureSummary } from "../../src/services/pr-comment.js";
 
@@ -108,6 +109,71 @@ describe("pr-comment", () => {
       expect(body).not.toContain("https://github.com");
       expect(body).not.toContain("[🔄 Recheck]");
       expect(body).toContain("comment `/recheck` to re-evaluate");
+    });
+
+    it("includes override snippet in collapsible section when details contain one", () => {
+      const failuresWithDetails: FailureSummary[] = [
+        {
+          ruleName: "migration-sync",
+          title: "Missing 2 file(s) from main",
+          summary: "This branch is missing files that exist on main.",
+          details: `**Missing:**\n- file-a.cs\n- file-b.cs\n\nRebase on main and resolve the missing files.\n\n---\n**If these deletions are intentional**, add this to your PR description:\n\`\`\`\n<!-- branch-guard:allow\nmigration-sync: file-a.cs (reason for deletion)\nmigration-sync: file-b.cs (reason for deletion)\n-->\n\`\`\``,
+        },
+      ];
+
+      const body = buildFailureBody(failuresWithDetails);
+
+      expect(body).toContain("<details>");
+      expect(body).toContain("Override instructions");
+      expect(body).toContain("### `migration-sync`");
+      expect(body).toContain("<!-- branch-guard:allow");
+      expect(body).toContain("migration-sync: file-a.cs (reason for deletion)");
+      expect(body).toContain("</details>");
+    });
+
+    it("does not include override section when no details have snippets", () => {
+      const body = buildFailureBody(sampleFailures);
+
+      expect(body).not.toContain("<details>");
+      expect(body).not.toContain("Override instructions");
+    });
+
+    it("only includes override snippets for failures that have them", () => {
+      const mixedFailures: FailureSummary[] = [
+        {
+          ruleName: "migration-sync",
+          title: "Missing 1 file(s) from main",
+          summary: "Missing files",
+          details: `**Missing:**\n- file-a.cs\n\nRebase on main.\n\n---\n**If these deletions are intentional**, add this to your PR description:\n\`\`\`\n<!-- branch-guard:allow\nmigration-sync: file-a.cs (reason for deletion)\n-->\n\`\`\``,
+        },
+        {
+          ruleName: "lockfile-check",
+          title: "Missing companion file update",
+          summary: "Lockfile not updated",
+          // No details — file-pair doesn't produce override snippets
+        },
+      ];
+
+      const body = buildFailureBody(mixedFailures);
+
+      expect(body).toContain("<details>");
+      expect(body).toContain("### `migration-sync`");
+      // lockfile-check should NOT appear in the override section
+      expect(body).not.toContain("### `lockfile-check`");
+    });
+  });
+
+  describe("extractOverrideSnippet", () => {
+    it("extracts content after the --- separator", () => {
+      const details = `**Missing:**\n- file.cs\n\nRebase on main.\n\n---\n**If these deletions are intentional**, add this snippet`;
+      const snippet = extractOverrideSnippet(details);
+
+      expect(snippet).toBe("**If these deletions are intentional**, add this snippet");
+    });
+
+    it("returns null when no separator exists", () => {
+      const details = "**Missing:**\n- file.cs\n\nRebase on main.";
+      expect(extractOverrideSnippet(details)).toBeNull();
     });
   });
 
