@@ -8,9 +8,17 @@ export interface FailureSummary {
   ruleName: string;
   title: string;
   summary: string;
+  details?: string;
 }
 
 // --- Comment body builders ---
+
+/** Extract the override snippet portion from check details (everything after the --- separator). */
+function extractOverrideSnippet(details: string): string | null {
+  const separatorIdx = details.indexOf("\n---\n");
+  if (separatorIdx === -1) return null;
+  return details.slice(separatorIdx + "\n---\n".length);
+}
 
 function buildFailureBody(
   failures: FailureSummary[],
@@ -30,18 +38,45 @@ function buildFailureBody(
     recheckAction = `[🔄 Recheck](${recheckUrl}) — comment \`/recheck\` to re-evaluate`;
   }
 
-  return [
+  // Collect override snippets from failures that have them
+  const overrideSections = failures
+    .map((f) => {
+      if (!f.details) return null;
+      const snippet = extractOverrideSnippet(f.details);
+      if (!snippet) return null;
+      return `### \`${f.ruleName}\`\n${snippet}`;
+    })
+    .filter(Boolean);
+
+  const parts = [
     COMMENT_MARKER,
     `## ❌ Branch Guard: ${count} check(s) failed`,
     "",
     "| Rule | Result | Details |",
     "|------|--------|---------|",
     rows,
+  ];
+
+  if (overrideSections.length > 0) {
+    parts.push(
+      "",
+      "<details>",
+      "<summary>Override instructions</summary>",
+      "",
+      ...overrideSections as string[],
+      "",
+      "</details>",
+    );
+  }
+
+  parts.push(
     "",
     `> Resolve the issues above and push again, or ${recheckAction}.`,
     ">",
     "> *This comment is posted by BranchGuard and updates automatically.*",
-  ].join("\n");
+  );
+
+  return parts.join("\n");
 }
 
 function buildSuccessBody(): string {
@@ -181,4 +216,4 @@ export async function updateCommentToSuccess(
 }
 
 // Export for testing
-export { COMMENT_MARKER, buildFailureBody, buildSuccessBody, findBotComment };
+export { COMMENT_MARKER, buildFailureBody, buildSuccessBody, findBotComment, extractOverrideSnippet };
