@@ -2,6 +2,7 @@ import type { Probot, Context } from "probot";
 import { loadConfig } from "../services/config.js";
 import { getPrChangedFiles } from "../services/pr-files.js";
 import { evaluateRules, postConfigError } from "../services/evaluate.js";
+import { buildPrContext } from "../services/pr-context.js";
 
 const RECHECK_COMMANDS = ["/recheck", "/branch-guard recheck"];
 
@@ -82,15 +83,7 @@ export function registerIssueCommentHandler(app: Probot): void {
       octokit: context.octokit as any,
       owner,
       repo,
-      pr: {
-        number: prNumber,
-        headSha: pr.head.sha,
-        baseBranch: pr.base.ref,
-        baseSha: pr.base.sha,
-        changedFiles,
-        prBody: pr.body ?? undefined,
-        author: pr.user?.login,
-      },
+      pr: buildPrContext(pr, changedFiles),
       config: configResult.config,
       logger,
     });

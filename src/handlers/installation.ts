@@ -5,6 +5,7 @@ import type { Config } from "../types.js";
 import { loadConfig } from "../services/config.js";
 import { getPrChangedFiles } from "../services/pr-files.js";
 import { evaluateRules } from "../services/evaluate.js";
+import { buildPrContext, listOpenPrs } from "../services/pr-context.js";
 
 const PR_BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 500;
@@ -105,30 +106,6 @@ async function processRepo(
   await evaluateOpenPrs(octokit, owner, repoName, configResult.config, openPrs, logger);
 }
 
-async function listOpenPrs(
-  octokit: Octokit,
-  owner: string,
-  repoName: string,
-): Promise<any[]> {
-  const allPrs: any[] = [];
-  let page = 1;
-
-  while (true) {
-    const response = await octokit.request(
-      "GET /repos/{owner}/{repo}/pulls",
-      { owner, repo: repoName, state: "open", per_page: 100, page },
-    );
-
-    const prs = (response.data as any[]) ?? [];
-    allPrs.push(...prs);
-
-    if (prs.length < 100) break;
-    page++;
-  }
-
-  return allPrs;
-}
-
 async function evaluateOpenPrs(
   octokit: Octokit,
   owner: string,
@@ -157,14 +134,7 @@ async function evaluateOpenPrs(
             octokit,
             owner,
             repo: repoName,
-            pr: {
-              number: pr.number,
-              headSha: pr.head.sha,
-              baseBranch: pr.base.ref,
-              baseSha: pr.base.sha,
-              changedFiles,
-              prBody: pr.body ?? undefined,
-            },
+            pr: buildPrContext(pr, changedFiles),
             config,
             logger: prLogger,
           });
