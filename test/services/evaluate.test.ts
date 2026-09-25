@@ -124,7 +124,72 @@ describe("evaluateRules", () => {
     });
 
     // No check runs should be created
-    expect(octokit.request).not.toHaveBeenCalled();
+    const createCalls = octokit.request.mock.calls.filter(
+      (call: any[]) => call[0] === "POST /repos/{owner}/{repo}/check-runs",
+    );
+    expect(createCalls).toHaveLength(0);
+  });
+
+  it("clears stale checks and comment when a PR is retargeted to another base", async () => {
+    const octokit = {
+      request: vi.fn().mockImplementation((url: string) => {
+        if (url === "GET /repos/{owner}/{repo}/commits/{ref}/check-runs") {
+          return Promise.resolve({
+            data: {
+              check_runs: [
+                { id: 7, name: "branch-guard/main-rule", status: "completed", conclusion: "failure" },
+                { id: 8, name: "other-app/check", status: "completed", conclusion: "failure" },
+              ],
+            },
+          });
+        }
+        if (url === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+          return Promise.resolve({
+            data: [{ id: 55, body: "<!-- branch-guard-status -->\n## ❌ Branch Guard: 1 check(s) failed" }],
+          });
+        }
+        return Promise.resolve({ data: {} });
+      }),
+    } as any;
+
+    const config: Config = {
+      rules: [
+        {
+          name: "main-rule",
+          description: "Test",
+          check_type: "file_pair",
+          on: { branches: ["main"], paths: { include: ["src/**"], exclude: [] } },
+          config: { companion: "CHANGELOG.md", mode: "any" },
+        },
+      ],
+    };
+
+    await evaluateRules({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      pr: {
+        number: 1,
+        headSha: "abc123",
+        baseBranch: "dev",
+        baseSha: "base456",
+        changedFiles: ["src/index.ts"],
+      },
+      config,
+      logger: createLogger(),
+    });
+
+    const checkUpdates = octokit.request.mock.calls.filter(
+      (call: any[]) => call[0] === "PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}",
+    );
+    expect(checkUpdates).toHaveLength(1);
+    expect(checkUpdates[0][1]).toMatchObject({ check_run_id: 7, conclusion: "success" });
+
+    const commentUpdate = octokit.request.mock.calls.find(
+      (call: any[]) => call[0] === "PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}",
+    );
+    expect(commentUpdate?.[1]).toMatchObject({ comment_id: 55 });
+    expect(commentUpdate?.[1].body).toContain("All checks passed");
   });
 
   it("creates passing check when no changed files match (branch protection compat)", async () => {

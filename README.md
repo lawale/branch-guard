@@ -193,10 +193,13 @@ With multiple requirements and `mode: all`:
 | `required_users` | string[] | GitHub usernames who can approve (optional) |
 | `mode` | enum | `any` (default) — at least one requirement met. `all` — every requirement met. |
 | `auto_request_reviewers` | boolean | Auto-request missing reviewers on the PR when the check fails (default: `false`) |
+| `auto_pass_sole_author` | boolean | Treat a requirement as met when the PR author is its only eligible approver (default: `false`) |
 
 At least one of `required_teams` or `required_users` must be provided. The check evaluates the latest review from each reviewer — if any required reviewer has requested changes, the check fails regardless of other approvals. Username matching is case-insensitive. The check re-evaluates on PR sync or `/recheck`.
 
 When `auto_request_reviewers` is enabled, BranchGuard automatically requests review from the missing teams/users on the PR. Only missing reviewers are requested — already-approved teams/users are skipped. Reviewers are not requested when the failure is due to changes being requested (those reviewers already know). GitHub handles overlapping team memberships gracefully (no duplicate notifications).
+
+GitHub doesn't allow PR authors to approve their own pull requests. So if the author is the only member of a required team (or is the required user), that requirement can never be met. With `auto_pass_sole_author: true`, such requirements count as satisfied and the check summary notes it. Teams with any other member are unaffected, and a "changes requested" review still fails the check.
 
 > **Note:** Requires the **Organization Members: Read** permission to resolve team memberships, and **Pull Requests: Read & Write** when `auto_request_reviewers` is enabled.
 

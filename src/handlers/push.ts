@@ -104,6 +104,7 @@ export function registerPushHandler(app: Probot): void {
                 baseSha: pr.base.sha,
                 changedFiles,
                 prBody: pr.body ?? undefined,
+                author: pr.user?.login,
               },
               config: configResult.config,
               logger: prLogger,

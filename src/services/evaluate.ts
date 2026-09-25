@@ -4,8 +4,8 @@ import type { Config, Rule, PullRequestContext, ExternalStatusRule, CheckResult 
 import { checkRunName, CONFIG_CHECK_NAME } from "../types.js";
 import { matchFiles, hasMatchingFiles } from "./file-matcher.js";
 import { getCheck } from "../checks/index.js";
-import { createCheckRun, updateCheckRun, findCheckRun } from "./check-runs.js";
-import { getPendingKey, setPendingEvaluation } from "../checks/external-status.js";
+import { createCheckRun, updateCheckRun, findCheckRun, listCheckRuns } from "./check-runs.js";
+import { getPendingKey, setPendingEvaluation, deletePendingEvaluation } from "../checks/external-status.js";
 import { postOrUpdateFailureComment, updateCommentToSuccess } from "./pr-comment.js";
 
 interface EvaluateParams {
@@ -28,10 +28,22 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
   const applicableRules = config.rules.filter((rule) =>
     rule.on.branches.includes(pr.baseBranch),
   );
+  const inapplicableRules = config.rules.filter(
+    (rule) => !rule.on.branches.includes(pr.baseBranch),
+  );
+
+  // If the PR was retargeted, checks from rules for the previous base branch
+  // may still be sitting on the head SHA — clear them so they don't block the PR.
+  if (inapplicableRules.length > 0) {
+    try {
+      await clearStaleChecks(octokit, owner, repo, pr, inapplicableRules, logger);
+    } catch (error) {
+      logger.error({ error }, "Failed to clear stale checks from other base branches");
+    }
+  }
 
   if (applicableRules.length === 0) {
     logger.debug({ baseBranch: pr.baseBranch }, "No rules apply to this base branch");
-    return;
   }
 
   // Evaluate each rule independently — one failure shouldn't block others
@@ -79,8 +91,11 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
     )
     .map((r) => r.value!);
 
+  const hasPending = evaluatedResults.some((r) => r.pending);
+  const completedResults = evaluatedResults.filter((r) => !r.pending);
+
   // Include error failures in the aggregation
-  const allResults = [...evaluatedResults, ...errorFailures];
+  const allResults = [...completedResults, ...errorFailures];
 
   const notifiableFailures = allResults
     .filter((r) => r.result.conclusion === "failure" && r.rule.notify !== false)
@@ -94,7 +109,10 @@ export async function evaluateRules(params: EvaluateParams): Promise<void> {
   try {
     if (notifiableFailures.length > 0) {
       await postOrUpdateFailureComment(octokit, owner, repo, pr.number, notifiableFailures, logger);
-    } else if (allResults.length > 0) {
+    } else if (!hasPending) {
+      // Also runs when no rule produced a result (e.g. PR retargeted to a branch
+      // with no matching rules) so a stale failure comment gets resolved.
+      // No-op when there is no existing comment.
       await updateCommentToSuccess(octokit, owner, repo, pr.number, logger);
     }
   } catch (commentError) {
@@ -114,6 +132,8 @@ interface SingleRuleParams {
 interface RuleEvalResult {
   rule: Rule;
   result: CheckResult;
+  /** True when an external_status check is still waiting on other checks. */
+  pending?: boolean;
 }
 
 async function evaluateSingleRule(params: SingleRuleParams): Promise<RuleEvalResult | null> {
@@ -230,7 +250,7 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<RuleEvalRes
     });
 
     ruleLogger.info({ pending: result.title }, "External status check pending — waiting for required checks");
-    return null;
+    return { rule, result, pending: true };
   }
 
   // Update check run with result
@@ -250,6 +270,48 @@ async function evaluateSingleRule(params: SingleRuleParams): Promise<RuleEvalRes
   ruleLogger.info({ conclusion: result.conclusion }, "Rule evaluation complete");
 
   return { rule, result };
+}
+
+/**
+ * Mark failing/in-progress check runs for rules that don't apply to the PR's
+ * current base branch as passing. Handles PRs retargeted to a different base.
+ */
+async function clearStaleChecks(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pr: PullRequestContext,
+  rules: Rule[],
+  logger: Logger,
+): Promise<void> {
+  const staleNames = new Map(rules.map((rule) => [checkRunName(rule.name), rule]));
+  const runs = await listCheckRuns(octokit, owner, repo, pr.headSha);
+
+  // Only the most recent run per name matters (API returns newest first)
+  const seen = new Set<string>();
+  for (const run of runs) {
+    if (seen.has(run.name)) continue;
+    seen.add(run.name);
+
+    const rule = staleNames.get(run.name);
+    if (!rule) continue;
+    if (run.status === "completed" && run.conclusion === "success") continue;
+
+    deletePendingEvaluation(getPendingKey(owner, repo, pr.headSha, rule.name));
+
+    await updateCheckRun(octokit, {
+      owner,
+      repo,
+      checkRunId: run.id,
+      status: "completed",
+      conclusion: "success",
+      output: {
+        title: "Rule not applicable",
+        summary: `This rule does not apply to the \`${pr.baseBranch}\` base branch.`,
+      },
+    });
+    logger.info({ rule: rule.name, baseBranch: pr.baseBranch }, "Cleared stale check for rule not applicable to base branch");
+  }
 }
 
 async function postErrorCheck(
