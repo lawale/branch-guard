@@ -2,6 +2,7 @@ import type { Probot, Context } from "probot";
 import { loadConfig } from "../services/config.js";
 import { getPrChangedFiles } from "../services/pr-files.js";
 import { evaluateRules } from "../services/evaluate.js";
+import { buildPrContext, getTargetBase, listOpenPrs } from "../services/pr-context.js";
 import { hasMatchingFiles } from "../services/file-matcher.js";
 import type { Rule } from "../types.js";
 
@@ -62,12 +63,10 @@ export function registerPushHandler(app: Probot): void {
       "Push affects rules — re-evaluating open PRs",
     );
 
-    // List open PRs targeting this branch
-    const prsResponse = await context.octokit.request(
-      "GET /repos/{owner}/{repo}/pulls",
-      { owner, repo, base: branch, state: "open", per_page: 100 },
-    );
-    const openPrs = prsResponse.data as any[];
+    // List open PRs targeting this branch — including stacked PRs whose trunk
+    // is this branch, which a `base` filter on the API would miss
+    const allOpenPrs = await listOpenPrs(context.octokit as any, owner, repo);
+    const openPrs = allOpenPrs.filter((pr) => getTargetBase(pr).ref === branch);
 
     if (openPrs.length === 0) {
       logger.debug("No open PRs targeting this branch");
@@ -97,15 +96,7 @@ export function registerPushHandler(app: Probot): void {
               octokit: context.octokit as any,
               owner,
               repo,
-              pr: {
-                number: pr.number,
-                headSha: pr.head.sha,
-                baseBranch: pr.base.ref,
-                baseSha: pr.base.sha,
-                changedFiles,
-                prBody: pr.body ?? undefined,
-                author: pr.user?.login,
-              },
+              pr: buildPrContext(pr, changedFiles),
               config: configResult.config,
               logger: prLogger,
             });

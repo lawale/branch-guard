@@ -60,6 +60,12 @@ rules:
 
 Rules are limited to 20 per config file. Each rule produces a check run named `branch-guard/{ruleName}`.
 
+### Stacked Pull Requests
+
+For [stacked pull requests](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs), `on.branches` is matched against the stack's trunk (the branch the bottom PR targets), not the branch of the PR directly below. This matches how GitHub applies the trunk's rulesets to every PR in a stack. `file_presence` and `branch_age` also compare against the trunk. A push to the trunk re-evaluates every PR in stacks built on it.
+
+Changed files are still per layer: each PR is checked against its own diff.
+
 ## Check Types
 
 ### `file_presence`
