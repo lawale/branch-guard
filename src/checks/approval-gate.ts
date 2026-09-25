@@ -11,6 +11,8 @@ interface ApprovalStatus {
   passed: boolean;
   approvers: string[];
   missingRequirements: string[];
+  /** Requirements satisfied because the PR author is the only eligible approver. */
+  autoPassed: string[];
   blockers: string[];
 }
 
@@ -19,7 +21,12 @@ export class ApprovalGateCheck implements CheckType {
 
   async execute(ctx: CheckContext): Promise<CheckResult> {
     const rule = ctx.rule as ApprovalGateRule;
-    const { required_teams = [], required_users = [], mode } = rule.config;
+    const {
+      required_teams = [],
+      required_users = [],
+      mode,
+      auto_pass_sole_author = false,
+    } = rule.config;
 
     // 1. Get the latest review from each user
     const reviews = await this.getLatestReviews(ctx);
@@ -34,6 +41,7 @@ export class ApprovalGateCheck implements CheckType {
       required_users,
       teamMembers,
       mode,
+      auto_pass_sole_author ? ctx.pr.author : undefined,
     );
 
     // 4. Return result
@@ -52,10 +60,21 @@ export class ApprovalGateCheck implements CheckType {
       ];
       const modeText = mode === "all" ? "all of" : "at least one of";
 
+      const lines: string[] = [];
+      if (status.approvers.length > 0) {
+        lines.push(`Approved by: ${status.approvers.map((a) => `@${a}`).join(", ")}`);
+      }
+      if (status.autoPassed.length > 0) {
+        lines.push(
+          `Auto-passed: ${status.autoPassed.join(", ")} (PR author @${ctx.pr.author} is the only eligible approver)`,
+        );
+      }
+      lines.push(`Required ${modeText}: ${requirements.join(", ")}`);
+
       return {
         conclusion: "success",
         title: "Approval requirements met",
-        summary: `Approved by: ${status.approvers.map((a) => `@${a}`).join(", ")}\n\nRequired ${modeText}: ${requirements.join(", ")}`,
+        summary: lines.join("\n\n"),
       };
     }
 
@@ -231,6 +250,7 @@ export class ApprovalGateCheck implements CheckType {
     requiredUsers: string[],
     teamMembers: Map<string, Set<string>>,
     mode: "any" | "all",
+    soleAuthor?: string,
   ): ApprovalStatus {
     const approvers = reviews
       .filter((r) => r.state === "APPROVED")
@@ -241,7 +261,7 @@ export class ApprovalGateCheck implements CheckType {
       .map((r) => r.user);
 
     if (blockers.length > 0) {
-      return { passed: false, approvers: [], missingRequirements: [], blockers };
+      return { passed: false, approvers: [], missingRequirements: [], autoPassed: [], blockers };
     }
 
     const approverSet = new Set(approvers);
@@ -260,11 +280,23 @@ export class ApprovalGateCheck implements CheckType {
 
     const satisfied: string[] = [];
     const missing: string[] = [];
+    const autoPassed: string[] = [];
+    const author = soleAuthor?.toLowerCase();
 
     for (const req of requirements) {
       const hasSomeone = [...req.validApprovers].some((u) => approverSet.has(u));
+      // GitHub doesn't let authors approve their own PR, so a requirement whose
+      // only eligible approver is the author could never be met.
+      const authorIsSoleApprover =
+        author !== undefined &&
+        req.validApprovers.size > 0 &&
+        [...req.validApprovers].every((u) => u === author);
+
       if (hasSomeone) {
         satisfied.push(req.label);
+      } else if (authorIsSoleApprover) {
+        satisfied.push(req.label);
+        autoPassed.push(req.label);
       } else {
         missing.push(req.label);
       }
@@ -281,6 +313,7 @@ export class ApprovalGateCheck implements CheckType {
       passed,
       approvers: relevantApprovers,
       missingRequirements: missing,
+      autoPassed,
       blockers: [],
     };
   }

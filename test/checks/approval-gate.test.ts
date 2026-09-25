@@ -10,8 +10,10 @@ function createMockContext(
     required_users?: string[];
     mode?: "any" | "all";
     auto_request_reviewers?: boolean;
+    auto_pass_sole_author?: boolean;
   },
   mockRequestReviewersError?: { status: number; message: string },
+  author?: string,
 ): CheckContext {
   const reviewsResponse = reviews.map((r) => ({
     user: { login: r.user },
@@ -64,6 +66,7 @@ function createMockContext(
         required_users: config.required_users,
         mode: config.mode ?? "any",
         auto_request_reviewers: config.auto_request_reviewers ?? false,
+        auto_pass_sole_author: config.auto_pass_sole_author ?? false,
       },
     } as ApprovalGateRule,
     pr: {
@@ -72,6 +75,7 @@ function createMockContext(
       baseBranch: "main",
       baseSha: "base123",
       changedFiles: ["api/routes.ts"],
+      author,
     },
     logger: {
       debug: vi.fn(),
@@ -522,6 +526,107 @@ describe("ApprovalGateCheck", () => {
       const calls = (ctx.octokit.request as any).mock.calls;
       const requestCalls = calls.filter((c: any) => c[0].includes("/requested_reviewers"));
       expect(requestCalls).toHaveLength(0);
+    });
+  });
+
+  describe("auto_pass_sole_author", () => {
+    it("passes when the PR author is the only member of the required team", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["Wale"] },
+        { required_teams: ["backend-team"], auto_pass_sole_author: true },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("success");
+      expect(result.summary).toContain("Auto-passed: @backend-team");
+      expect(result.summary).toContain("@wale");
+    });
+
+    it("passes when the PR author is the required user", async () => {
+      const ctx = createMockContext(
+        [],
+        {},
+        { required_users: ["wale"], auto_pass_sole_author: true },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("success");
+    });
+
+    it("does not auto-pass when the flag is off", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["wale"] },
+        { required_teams: ["backend-team"] },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+    });
+
+    it("does not auto-pass when the team has other members", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["wale", "bob"] },
+        { required_teams: ["backend-team"], auto_pass_sole_author: true },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+    });
+
+    it("does not auto-pass when team members could not be resolved", async () => {
+      const ctx = createMockContext(
+        [],
+        {},
+        { required_teams: ["missing-team"], auto_pass_sole_author: true },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+    });
+
+    it("only satisfies the author's requirement in mode: all", async () => {
+      const ctx = createMockContext(
+        [],
+        { "backend-team": ["wale"], "security-team": ["sam"] },
+        {
+          required_teams: ["backend-team", "security-team"],
+          mode: "all",
+          auto_pass_sole_author: true,
+        },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toBe("Approval required from: @security-team");
+    });
+
+    it("still fails when changes are requested", async () => {
+      const ctx = createMockContext(
+        [{ user: "bob", state: "CHANGES_REQUESTED" }],
+        { "backend-team": ["wale"] },
+        { required_teams: ["backend-team"], auto_pass_sole_author: true },
+        undefined,
+        "wale",
+      );
+
+      const result = await check.execute(ctx);
+      expect(result.conclusion).toBe("failure");
+      expect(result.title).toBe("Changes requested");
     });
   });
 });

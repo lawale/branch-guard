@@ -91,3 +91,34 @@ export async function findCheckRun(
 
   return runs.length > 0 ? runs[0] : null;
 }
+
+/**
+ * List all check runs on a commit (newest first), following pagination.
+ */
+export async function listCheckRuns(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  headSha: string,
+): Promise<CheckRun[]> {
+  const perPage = 100;
+  const runs: CheckRun[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await withRetry(() =>
+      octokit.request(
+        "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+        { owner, repo, ref: headSha, per_page: perPage, page },
+      ),
+    );
+
+    const pageRuns = ((response.data as any).check_runs ?? []) as CheckRun[];
+    runs.push(...pageRuns);
+
+    if (pageRuns.length < perPage) break;
+    page++;
+  }
+
+  return runs;
+}
